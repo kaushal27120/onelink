@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { Plus, Upload, Save, Trash2, Edit2, X, Loader2, Mail, MapPin, DollarSign, CheckCircle2, XCircle, AlertCircle, Users, Phone, Briefcase } from 'lucide-react'
+import { Plus, Upload, Save, Trash2, Edit2, X, Loader2, Mail, CheckCircle2, AlertCircle, Users, Phone } from 'lucide-react'
 
 const POSITIONS = ['kucharz','kelner','kasjer','manager','zmywak','barista','dostawa','inne']
 
@@ -42,7 +42,7 @@ const normalizeHeader = (h: string) => { const l = h.trim().toLowerCase(); retur
 
 export function EmployeesManager({
   supabase,
-  companyId,
+  companyId: _companyId,
   locations,
   defaultLocationId,
 }: {

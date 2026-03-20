@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { OneLinkLogo } from "@/components/onelink-logo";
-import { useRouter } from "next/navigation";
 import { Check, Zap, Building2, Globe, TrendingUp, ShieldCheck, BarChart3, Package, Receipt, Users } from "lucide-react";
 
 type Plan = {

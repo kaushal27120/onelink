@@ -62,7 +62,7 @@ const buildCalGrid = (year: number, month: number): (string | null)[] => {
 }
 
 export default function ScheduleScreen({ navigation }: any) {
-  const [userId, setUserId]           = useState('')
+  const [, setUserId]                 = useState('')
   const [userName, setUserName]       = useState('')
   const [monthShifts, setMonthShifts] = useState<Shift[]>([])
   const [listShifts, setListShifts]   = useState<Shift[]>([])

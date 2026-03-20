@@ -14,11 +14,10 @@ import ProductAutocomplete from '@/components/product-autocomplete'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
-  AlertCircle, UploadCloud, FileSpreadsheet, Save, CheckCircle, Plus,
+  AlertCircle, FileSpreadsheet, Save, CheckCircle, Plus,
   Trash2, AlertTriangle, ShieldAlert, Package, Receipt, FileText,
   ClipboardList, Search, ArrowLeft, Send, Clock, ChevronRight,
-  Loader2, Calendar, RefreshCw, CheckCircle2, XCircle, HelpCircle,
-  AlertOctagon
+  Loader2, Calendar, RefreshCw,
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
@@ -222,7 +221,7 @@ export default function OpsDashboard() {
   const [loading, setLoading] = useState(true)
   const [myLocations, setMyLocations] = useState<LocationData[]>([])
   const [selectedLocation, setSelectedLocation] = useState<LocationData | null>(null)
-  const [userRole, setUserRole] = useState('')
+  const [, setUserRole] = useState('')
   const [userId, setUserId] = useState('')
   const [activeView, setActiveView] = useState<ActiveView>('reporting')
   const [reportDate, setReportDate] = useState('')
@@ -327,9 +326,9 @@ export default function OpsDashboard() {
         .select('location_id, locations ( id, name, company_id )')
         .eq('user_id', user.id)
       if (access) {
-        // @ts-ignore
+        // @ts-expect-error - Supabase join type mismatch
         setMyLocations(access)
-        // @ts-ignore
+        // @ts-expect-error - Supabase join type mismatch
         if (access.length === 1) setSelectedLocation(access[0])
       }
       setLoading(false)
@@ -557,7 +556,7 @@ export default function OpsDashboard() {
   const netCalculated = gross > 0 ? gross / (1 + VAT_RATE) : 0
   const net = netManual > 0 ? netManual : netCalculated
   const isNetManual = netManual > 0
-  const vat = gross - net
+  const _vat = gross - net
   const cashReported = Number(salesForm.cashReported) || 0
   const cashPhysical = Number(salesForm.cashPhysical) || 0
   const cashDiff = cashPhysical - cashReported
@@ -992,7 +991,7 @@ export default function OpsDashboard() {
     setJobItems(prev => prev.map(i => i.id === id ? { ...i, [field]: val } : i))
   }
 
-  const handleAddWorker = async () => {
+  const _handleAddWorker = async () => {
     if (!selectedLocation) return
     const name = newWorker.full_name.trim()
     if (!name) {
@@ -1113,7 +1112,7 @@ export default function OpsDashboard() {
     const autoRate = emp ? String(emp.real_hour_cost ?? emp.base_rate ?? '') : ''
     setEmployeeRows(p => { const c = [...p]; c[i] = { ...c[i], employee_id: empId, rate: c[i].rate || autoRate }; return c })
   }
-  const updateShiftCell = (userId: string, date: string, field: keyof ShiftCell, value: string) => {
+  const _updateShiftCell = (userId: string, date: string, field: keyof ShiftCell, value: string) => {
     setShiftMatrix(prev => {
       const key = `${userId}__${date}`
       const existing = prev[key] || { id: undefined, user_id: userId, date, position: '', time_start: '', time_end: '' }
@@ -1151,7 +1150,7 @@ export default function OpsDashboard() {
   const cashDiffColor = Math.abs(cashDiff) < 0.01 ? 'text-green-700' : 'text-red-700'
   const scheduleWeekDays = buildWeekDays(scheduleWeekStart)
 
-  const saveSchedule = async () => {
+  const _saveSchedule = async () => {
     if (!selectedLocation || !scheduleWeekStart || scheduleWeekDays.length === 0) return
 
     const start = scheduleWeekStart
@@ -1899,7 +1898,7 @@ export default function OpsDashboard() {
                               <span className="flex items-center gap-1"><Clock className="w-3 h-3" />Termin: {job.due_date}</span>
                               <span>{job.item_count} pozycji</span>
                             </div>
-                            {job.note && <p className="text-sm text-slate-600 mt-1 italic">„{job.note}"</p>}
+                            {job.note && <p className="text-sm text-slate-600 mt-1 italic">&bdquo;{job.note}&rdquo;</p>}
                           </div>
                         </div>
                         <div className="flex items-center gap-3">
@@ -2150,7 +2149,7 @@ export default function OpsDashboard() {
                         <div className="bg-blue-50 px-4 py-2.5 flex items-center justify-between">
                           <div>
                             <p className="text-sm font-semibold text-blue-800">Podgląd importu — {excelProductRows.length} produktów</p>
-                            <p className="text-xs text-blue-600">Sprawdź i popraw dane, a następnie kliknij „Zapisz wszystkie"</p>
+                            <p className="text-xs text-blue-600">Sprawdź i popraw dane, a następnie kliknij &bdquo;Zapisz wszystkie&rdquo;</p>
                           </div>
                           <div className="flex gap-2">
                             <Button size="sm" variant="outline" onClick={() => setExcelProductRows([])}>Anuluj</Button>

@@ -263,7 +263,6 @@ export function ScheduleGrid({
     const emp = employees.find(e => e.id === sug.employee_id)
     if (!emp || !sug.time_start || !sug.time_end) return
     const rate = empRate(emp)
-    const hours = calcHours(fmt(sug.time_start), fmt(sug.time_end))
     await supabase.from('shifts').insert({
       location_id: sug.location_id,
       date: sug.date,
@@ -300,7 +299,6 @@ export function ScheduleGrid({
     if (!time_start || !time_end || !date || !employee_name) { alert('Wypełnij wszystkie wymagane pola'); return }
     const emp = employees.find(e => e.id === emp_id)
     const hourlyRate = empRate(emp ?? { id: '', full_name: '' })
-    const hours = calcHours(time_start, time_end)
 
     if (modal.mode === 'add') {
       await supabase.from('shifts').insert({

@@ -153,7 +153,7 @@ export function AdminUsersClient({ subscriptionPlan }: AdminUsersClientProps) {
                     onChange={(e) => setLocationName(e.target.value)}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Dla roli "Manager lokalu" wpisz nazwę lokalu, do którego ma mieć dostęp.
+                    Dla roli &ldquo;Manager lokalu&rdquo; wpisz nazwę lokalu, do którego ma mieć dostęp.
                   </p>
                 </div>
 

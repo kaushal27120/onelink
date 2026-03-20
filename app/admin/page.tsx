@@ -47,7 +47,7 @@ function IngredientsSection({ supabase, companyId }: { supabase: SupabaseClient;
   const [search, setSearch] = useState<string>("");
   const [categoryFilter, setCategoryFilter] = useState<string>("");
   const [sortBy, setSortBy] = useState<string>("name");
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [sortDir] = useState<'asc' | 'desc'>('asc');
   const [newIngredient, setNewIngredient] = useState<Partial<Record<"name"|"category"|"base_unit"|"min_threshold"|"last_price", string>>>({
     name: "",
     category: "",
@@ -147,8 +147,7 @@ function IngredientsSection({ supabase, companyId }: { supabase: SupabaseClient;
           error instanceof Error
             ? error.message
             : (typeof error === 'object' && error && 'message' in error
-                ? // @ts-ignore - Supabase error-like object
-                  (error as any).message
+                ? (error as Record<string, unknown>).message as string
                 : JSON.stringify(error));
         alert('Błąd podczas usuwania: ' + message);
       }
@@ -855,14 +854,14 @@ export default function AdminDashboard() {
     else if (locIds.length) cq = cq.in('location_id', locIds)
     const { data: imported } = await cq
     let cogs = 0, opexExcel = 0
-    imported?.forEach(c => { const a = Number(c.amount) || 0; c.cost_type === 'COS' ? cogs += a : opexExcel += a })
+    imported?.forEach(c => { const a = Number(c.amount) || 0; if (c.cost_type === 'COS') { cogs += a } else { opexExcel += a } })
 
     let mq = supabase.from('invoices').select('total_amount, total_net, invoice_type').eq('status', 'approved').gte('service_date', start).lte('service_date', end)
     if (filterLocationId !== 'all') mq = mq.eq('location_id', filterLocationId)
     else if (locIds.length) mq = mq.in('location_id', locIds)
     const { data: manual } = await mq
     let cosInv = 0, opexManual = 0
-    manual?.forEach(inv => { const a = Number(inv.total_net || inv.total_amount) || 0; inv.invoice_type === 'COS' ? cosInv += a : opexManual += a })
+    manual?.forEach(inv => { const a = Number(inv.total_net || inv.total_amount) || 0; if (inv.invoice_type === 'COS') { cosInv += a } else { opexManual += a } })
     cogs += cosInv
     const opex = opexExcel + opexManual + opsExtra
     const cogsPercent = netSales > 0 ? cogs / netSales : 0
@@ -1400,8 +1399,8 @@ export default function AdminDashboard() {
       if (filterLocationId !== 'all') q = q.eq('location_id', filterLocationId)
       else q = q.in('location_id', locIds)
 
-      const { data, error } = await q
-      
+      const { data } = await q
+
       if (data) {
         const histLocIds = Array.from(new Set(data.map((j: any) => j.location_id).filter(Boolean)))
         const locMap: Record<string, string> = {}
@@ -1578,9 +1577,6 @@ export default function AdminDashboard() {
   //  RENDER
   // ═══════════════════════════════════════════════════════════════════
   if (!selectedDate) return <div className="p-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></div>
-
-  const laborColor = pnl.laborPercent < LABOR_GREEN_MAX ? 'text-green-700 bg-green-50 border-green-200' : pnl.laborPercent <= LABOR_YELLOW_MAX ? 'text-yellow-700 bg-yellow-50 border-yellow-200' : 'text-red-700 bg-red-50 border-red-200'
-  const cashDiffColor = Math.abs(pnl.cashDiffTotal) < 0.01 ? 'text-green-700' : 'text-red-700'
 
   return (
     <div className="flex bg-[#F7F8FA] min-h-screen">

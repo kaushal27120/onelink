@@ -55,7 +55,7 @@ type Shift = {
   time_start: string; time_end: string
   break_minutes?: number
   position?: string | null
-  locations?: { name: string } | null
+  locations?: { name: string }[] | null
 }
 
 /* ─────────────── component ─────────────── */
@@ -169,9 +169,9 @@ export default function EmployeeDashboard() {
                 <p className="text-blue-100 text-sm mt-1 capitalize">
                   {new Date(nextShift.date).toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' })}
                 </p>
-                {nextShift.locations?.name && (
+                {nextShift.locations?.[0]?.name && (
                   <div className="flex items-center gap-1 mt-2 text-blue-200 text-xs">
-                    <MapPin className="w-3.5 h-3.5" />{nextShift.locations.name}
+                    <MapPin className="w-3.5 h-3.5" />{nextShift.locations[0].name}
                   </div>
                 )}
               </div>
@@ -281,9 +281,9 @@ export default function EmployeeDashboard() {
                         <span className="font-mono">{fmt(shift.time_start)} – {fmt(shift.time_end)}</span>
                         <span className="text-xs text-slate-400">({hrs.toFixed(1)} godz.)</span>
                       </div>
-                      {shift.locations?.name && (
+                      {shift.locations?.[0]?.name && (
                         <div className="flex items-center gap-2 text-gray-400 text-xs">
-                          <MapPin className="w-3.5 h-3.5" />{shift.locations.name}
+                          <MapPin className="w-3.5 h-3.5" />{shift.locations[0].name}
                         </div>
                       )}
                     </div>

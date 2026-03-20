@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/app/supabase-client'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -53,7 +52,7 @@ export function CentralWarehousePanel({
   const [locations, setLocations] = useState<any[]>([])
   const [transfers, setTransfers] = useState<any[]>([])
   const [deliveries, setDeliveries] = useState<any[]>([])
-  const [discrepancies, setDiscrepancies] = useState<any[]>([])
+  const [discrepancies] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [ingredients, setIngredients] = useState<any[]>([])
@@ -74,7 +73,7 @@ export function CentralWarehousePanel({
   const fetchData = async () => {
     setLoading(true)
     try {
-      let { data: warehouses } = await supabase
+      const { data: warehouses } = await supabase
         .from('warehouse_central')
         .select('*')
         .eq('name', warehouseName)
@@ -337,7 +336,7 @@ export function CentralWarehousePanel({
     }
   }
 
-  const markDiscrepancyResolved = async (id: string) => {
+  const markDiscrepancyResolved = async (_id: string) => {
     try {
       alert('Rozbieżność rozwiązana')
       fetchData()

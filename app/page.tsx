@@ -4,8 +4,8 @@ import Link from "next/link";
 import { OneLinkLogo } from "@/components/onelink-logo";
 import {
   TrendingUp, BarChart3, Package, Receipt, ShieldCheck,
-  Users, ChevronRight, Check, ArrowRight, Zap, Star,
-  Clock, PieChart, FileText, AlertCircle
+  ChevronRight, Check, ArrowRight, Zap, Star,
+  Clock, PieChart, FileText,
 } from "lucide-react";
 
 /* ── tiny helpers ── */
@@ -475,7 +475,7 @@ export default function HomePage() {
                   <Star key={j} className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
                 ))}
               </div>
-              <p className="text-[14px] text-white/60 leading-relaxed mb-5 italic">"{t.text}"</p>
+              <p className="text-[14px] text-white/60 leading-relaxed mb-5 italic">&ldquo;{t.text}&rdquo;</p>
               <div>
                 <p className="text-[13px] font-bold text-white">{t.name}</p>
                 <p className="text-[11px] text-white/35 mt-0.5">{t.role}</p>

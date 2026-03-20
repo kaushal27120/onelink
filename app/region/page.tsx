@@ -3,9 +3,17 @@ import { useEffect, useState } from 'react'
 import { createClient } from '../supabase-client'
 import { Card, CardContent } from '@/components/ui/card'
 
+type SaleRow = {
+  id: string
+  date: string
+  total_net: number
+  location_id: string
+  locations: { name: string } | null
+}
+
 export default function RegionalDashboard() {
   const supabase = createClient()
-  const [data, setData] = useState<Record<string, unknown>[]>([])
+  const [data, setData] = useState<SaleRow[]>([])
 
   useEffect(() => {
     const fetchData = async () => {
@@ -39,7 +47,7 @@ export default function RegionalDashboard() {
           <Card key={item.id}>
              <CardContent className="p-4 flex justify-between items-center">
                 <div>
-                   <div className="font-bold">{item.locations.name}</div>
+                   <div className="font-bold">{item.locations?.name}</div>
                    <div className="text-sm text-gray-500">{item.date}</div>
                 </div>
                 <div className="text-xl font-bold text-green-700">
