@@ -230,6 +230,11 @@ export default function EmployeeDashboard() {
   const [colleagues,     setColleagues]     = useState<{ id: string; full_name: string }[]>([])
   const [swapTargetId,   setSwapTargetId]   = useState('')
 
+  /* ── open / available shifts ── */
+  type OpenShift = { id: string; date: string; time_start: string; time_end: string; position: string | null; is_posted: boolean; accepted_by: string | null }
+  const [openShifts,   setOpenShifts]   = useState<OpenShift[]>([])
+  const [claimingId,   setClaimingId]   = useState<string | null>(null)
+
   /* ── init ── */
   useEffect(() => {
     ;(async () => {
@@ -357,6 +362,38 @@ export default function EmployeeDashboard() {
   useEffect(() => {
     if (userId) loadShifts()
   }, [userId, weekStart, loadShifts])
+
+  /* ── open / available shifts ── */
+  const loadOpenShifts = useCallback(async () => {
+    if (!locationId) return
+    const { data } = await supabase.from('shifts')
+      .select('id, date, time_start, time_end, position, is_posted, accepted_by')
+      .eq('location_id', locationId)
+      .eq('is_open_shift', true)
+      .eq('is_posted', true)
+      .is('accepted_by', null) // only unclaimed
+      .gte('date', today)
+      .order('date')
+    setOpenShifts((data ?? []) as OpenShift[])
+  }, [locationId, today, supabase])
+
+  useEffect(() => { if (locationId) loadOpenShifts() }, [locationId, loadOpenShifts])
+
+  const claimOpenShift = async (shiftId: string) => {
+    if (!employeeId || !userName) return
+    setClaimingId(shiftId)
+    const { error } = await supabase.from('shifts').update({
+      employee_id:  employeeId,
+      employee_name: userName,
+      user_id:       userId,
+      accepted_by:   userName,
+      accepted_at:   new Date().toISOString(),
+      is_open_shift: false,
+      status:        'scheduled',
+    }).eq('id', shiftId)
+    setClaimingId(null)
+    if (!error) { loadOpenShifts(); loadShifts() }
+  }
 
   /* ── month shifts (fetched when month view opens or month changes) ── */
   const loadMonthShifts = useCallback(async () => {
@@ -938,6 +975,43 @@ export default function EmployeeDashboard() {
                     </div>
                   )
                 })}
+              </div>
+            )}
+
+            {/* ── Available / open shifts ── */}
+            {openShifts.length > 0 && (
+              <div className="mt-4">
+                <p className="text-xs font-bold text-purple-700 uppercase tracking-wider mb-2">Dostępne zmiany do wzięcia</p>
+                <div className="space-y-2">
+                  {openShifts.map(s => {
+                    const hrs = calcHours(fmt(s.time_start), fmt(s.time_end))
+                    return (
+                      <div key={s.id} className="bg-white rounded-xl border border-purple-200 shadow-sm overflow-hidden">
+                        <div className="flex">
+                          <div className="w-1.5 shrink-0 bg-purple-400" />
+                          <div className="flex-1 p-3 flex items-center justify-between gap-3">
+                            <div>
+                              <p className="text-xs font-semibold text-purple-600">
+                                {new Date(s.date + 'T12:00:00').toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'short' })}
+                              </p>
+                              <p className="text-base font-bold text-gray-900 tabular-nums">{fmt(s.time_start)} – {fmt(s.time_end)}</p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-xs text-gray-500">{hrs.toFixed(1)}h</span>
+                                {s.position && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-200">{s.position}</span>}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => claimOpenShift(s.id)}
+                              disabled={!!claimingId}
+                              className="shrink-0 px-4 py-2 rounded-xl bg-purple-600 text-white text-xs font-bold hover:bg-purple-700 disabled:opacity-50 transition-colors">
+                              {claimingId === s.id ? '…' : 'Weź zmianę'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             )}
           </div>

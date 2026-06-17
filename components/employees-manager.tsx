@@ -107,7 +107,7 @@ export function EmployeesManager({
       const cols = withPin
         ? 'id, full_name, email, phone, position, status, real_hour_cost, base_rate, user_id, location_id, kiosk_pin_hash, locations(name)'
         : 'id, full_name, email, phone, position, status, real_hour_cost, base_rate, user_id, location_id, locations(name)'
-      let q = supabase.from('employees').select(cols).order('full_name')
+      let q = supabase.from('employees').select(cols).neq('status', 'inactive').order('full_name')
       if (filterLoc !== 'all') q = q.eq('location_id', filterLoc)
       else q = q.in('location_id', locationIds)
       return q
@@ -260,8 +260,9 @@ export function EmployeesManager({
     fetchEmployees()
   }
   const deleteEmployee = async (id: string) => {
-    if (!confirm('Usunąć tego pracownika?')) return
-    await supabase.from('employees').delete().eq('id', id)
+    if (!confirm('Oznaczyć pracownika jako nieaktywnego? Zniknie z listy, ale jego dane i historia pozostaną.')) return
+    const { error } = await supabase.from('employees').update({ status: 'inactive' }).eq('id', id)
+    if (error) { alert('Błąd: ' + error.message); return }
     fetchEmployees()
   }
 

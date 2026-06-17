@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -29,6 +29,7 @@ type DbShift = {
   is_posted?: boolean
   accepted_by?: string | null
   accepted_at?: string | null
+  is_open_shift?: boolean
 }
 
 type ClockInRecord = {
@@ -85,8 +86,10 @@ export type ScheduleEmployee = {
 type ModalState = {
   open: boolean
   mode: 'add' | 'edit'
-  shift: Partial<DbShift> & { emp_id?: string; publishNow?: boolean; repeatWeeks?: number }
+  shift: Partial<DbShift> & { emp_id?: string; publishNow?: boolean; repeatWeeks?: number; isOpenShift?: boolean }
 }
+
+type OpenShiftModal = { open: boolean; date: string; time_start: string; time_end: string; position: string; publishNow: boolean }
 
 /* ──────────────────────────────────────── constants ── */
 export const POSITIONS: { value: string; label: string; color: string }[] = [
@@ -185,9 +188,13 @@ export function ScheduleGrid({
   const [modal, setModal] = useState<ModalState>({ open: false, mode: 'add', shift: {} })
   const [tab, setTab] = useState<'schedule' | 'suggestions' | 'clockins'>('schedule')
   const [customPositions, setCustomPositions] = useState<{ value: string; label: string; color: string }[]>([])
-  const [showNewPos, setShowNewPos] = useState(false)
   const [newPosName, setNewPosName] = useState('')
+  const [newPosColor, setNewPosColor] = useState('#6366F1')
   const [savingPos, setSavingPos] = useState(false)
+  const [positionColors, setPositionColors] = useState<Record<string, string>>({}) // position_name → hex
+  const [showPosPanel, setShowPosPanel] = useState(false)
+  const [openShiftModal, setOpenShiftModal] = useState<OpenShiftModal>({ open: false, date: '', time_start: '08:00', time_end: '16:00', position: '', publishNow: false })
+  const [savingOpenShift, setSavingOpenShift] = useState(false)
 
   const weekDays = buildWeekDays(weekStart)
   const weekEnd = weekDays[6]?.iso ?? weekStart
@@ -254,6 +261,25 @@ export function ScheduleGrid({
 
   useEffect(() => { loadCustomPositions() }, [loadCustomPositions])
 
+  /* ── load position colors ── */
+  const loadPositionColors = useCallback(async () => {
+    if (!userId) return
+    const { data } = await supabase.from('position_colors').select('position_name, color_hex').eq('user_id', userId)
+    if (data) {
+      const map: Record<string, string> = {}
+      data.forEach((r: { position_name: string; color_hex: string }) => { map[r.position_name] = r.color_hex })
+      setPositionColors(map)
+    }
+  }, [userId, supabase])
+
+  useEffect(() => { loadPositionColors() }, [loadPositionColors])
+
+  const savePositionColor = async (posName: string, hex: string) => {
+    if (!userId) return
+    setPositionColors(prev => ({ ...prev, [posName]: hex }))
+    await supabase.from('position_colors').upsert({ user_id: userId, position_name: posName, color_hex: hex }, { onConflict: 'user_id,position_name' })
+  }
+
   /* ── save new custom position ── */
   const saveNewPosition = async () => {
     const name = newPosName.trim()
@@ -261,13 +287,27 @@ export function ScheduleGrid({
     setSavingPos(true)
     const { error } = await supabase.from('custom_positions').insert({ user_id: userId, name })
     if (!error) {
-      const newPos = { value: name, label: name, color: 'bg-indigo-100 text-indigo-800 border-indigo-300' }
-      setCustomPositions(prev => [...prev, newPos])
-      setModal(m => ({ ...m, shift: { ...m.shift, position: name } }))
+      await supabase.from('position_colors').upsert(
+        { user_id: userId, position_name: name, color_hex: newPosColor },
+        { onConflict: 'user_id,position_name' }
+      )
+      setPositionColors(prev => ({ ...prev, [name]: newPosColor }))
+      setCustomPositions(prev => [...prev, { value: name, label: name, color: '' }])
+      setNewPosName('')
+      setNewPosColor('#6366F1')
     }
-    setShowNewPos(false)
-    setNewPosName('')
     setSavingPos(false)
+  }
+
+  /* ── delete custom position ── */
+  const deleteCustomPosition = async (name: string) => {
+    if (!userId) return
+    await Promise.all([
+      supabase.from('custom_positions').delete().eq('user_id', userId).eq('name', name),
+      supabase.from('position_colors').delete().eq('user_id', userId).eq('position_name', name),
+    ])
+    setCustomPositions(prev => prev.filter(p => p.value !== name))
+    setPositionColors(prev => { const n = { ...prev }; delete n[name]; return n })
   }
 
   const allPositions = [...POSITIONS, ...customPositions]
@@ -277,6 +317,37 @@ export function ScheduleGrid({
     if (POSITION_MAP[lower]) return POSITION_MAP[lower].color
     const custom = customPositions.find(p => p.value.toLowerCase() === lower)
     return custom?.color ?? DEFAULT_COLOR
+  }
+  // Returns inline style when a custom hex color override exists for the position
+  const posStyle = (pos?: string | null): React.CSSProperties => {
+    if (!pos) return {}
+    const hex = positionColors[pos] ?? positionColors[pos.toLowerCase()]
+    if (!hex) return {}
+    return { backgroundColor: hex + '28', color: hex, borderColor: hex + '90' }
+  }
+
+  /* ── save open shift ── */
+  const saveOpenShift = async () => {
+    if (!locationId || !openShiftModal.date || !openShiftModal.time_start || !openShiftModal.time_end) return
+    setSavingOpenShift(true)
+    await supabase.from('shifts').insert({
+      location_id: locationId,
+      date: openShiftModal.date,
+      employee_name: '',
+      time_start: openShiftModal.time_start,
+      time_end: openShiftModal.time_end,
+      break_minutes: 0,
+      hourly_rate: 0,
+      hours_worked: calcHours(openShiftModal.time_start, openShiftModal.time_end),
+      labor_cost: 0,
+      status: 'open',
+      position: openShiftModal.position || null,
+      is_posted: openShiftModal.publishNow,
+      is_open_shift: true,
+    })
+    setSavingOpenShift(false)
+    setOpenShiftModal(m => ({ ...m, open: false }))
+    loadShifts()
   }
 
   /* ── helpers ── */
@@ -526,6 +597,10 @@ export function ScheduleGrid({
           <button onClick={exportPDF} className="h-8 px-3 text-xs rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 font-medium">
             📄 PDF
           </button>
+          <button onClick={() => setOpenShiftModal({ open: true, date: periodStart, time_start: '08:00', time_end: '16:00', position: '', publishNow: false })}
+            className="h-8 px-3 text-xs rounded-lg border border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100 font-medium">
+            + Zmiana do wzięcia
+          </button>
         </div>
       </div>
 
@@ -723,7 +798,8 @@ export function ScheduleGrid({
                           <div className={`space-y-0.5 ${viewMode === 'month' ? 'min-h-[32px]' : 'min-h-[52px]'}`}>
                             {dayShifts.map(shift => (
                               <button key={shift.id} onClick={() => openEdit(shift)}
-                                className={`group/s w-full text-left rounded border cursor-pointer hover:opacity-80 active:scale-95 transition-all font-medium relative ${posColor(shift.position)} ${viewMode === 'month' ? 'px-0.5 py-0.5 text-[9px]' : 'px-1.5 py-1 text-xs'} ${!shift.is_posted ? 'opacity-70 border-dashed' : ''}`}>
+                                className={`group/s w-full text-left rounded border cursor-pointer hover:opacity-80 active:scale-95 transition-all font-medium relative ${posColor(shift.position)} ${viewMode === 'month' ? 'px-0.5 py-0.5 text-[9px]' : 'px-1.5 py-1 text-xs'} ${!shift.is_posted ? 'opacity-70 border-dashed' : ''}`}
+                                style={posStyle(shift.position)}>
                                 {viewMode === 'month' ? (
                                   <div className="tabular-nums leading-tight">{fmt(shift.time_start).slice(0, 5)}</div>
                                 ) : (
@@ -777,31 +853,166 @@ export function ScheduleGrid({
                     </td>
                   </tr>
                 ))}
+                {/* Open shifts row */}
+                {(() => {
+                  const openShifts = shifts.filter(s => s.is_open_shift)
+                  if (openShifts.length === 0) return null
+                  return (
+                    <tr className="bg-purple-50/60 border-t-2 border-purple-200">
+                      <td className="px-3 py-2 border-r border-b border-slate-200 sticky left-0 bg-purple-50 z-10">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-full bg-purple-200 flex items-center justify-center text-[10px] font-bold text-purple-700 shrink-0">?</div>
+                          <div>
+                            <p className="text-xs font-semibold text-purple-800">Zmiany do wzięcia</p>
+                            <p className="text-[9px] text-purple-500">Dostępne dla pracowników</p>
+                          </div>
+                        </div>
+                      </td>
+                      {displayDays.map(d => {
+                        const dayOpen = openShifts.filter(s => s.date === d.iso)
+                        return (
+                          <td key={d.iso} className={`border-r border-b border-slate-200 align-top ${viewMode === 'month' ? 'p-0.5' : 'px-1.5 py-1.5'}`}>
+                            <div className={`space-y-0.5 ${viewMode === 'month' ? 'min-h-[32px]' : 'min-h-[52px]'}`}>
+                              {dayOpen.map(shift => (
+                                <button key={shift.id} onClick={() => openEdit(shift)}
+                                  className={`w-full text-left rounded border cursor-pointer hover:opacity-80 transition-all font-medium border-dashed border-purple-400 bg-purple-50 text-purple-700 ${viewMode === 'month' ? 'px-0.5 py-0.5 text-[9px]' : 'px-1.5 py-1 text-xs'} ${!shift.is_posted ? 'opacity-60' : ''}`}
+                                  style={posStyle(shift.position)}>
+                                  {viewMode === 'month' ? (
+                                    <div className="tabular-nums leading-tight">{fmt(shift.time_start)}</div>
+                                  ) : (
+                                    <>
+                                      <div className="tabular-nums">{fmt(shift.time_start)}–{fmt(shift.time_end)}</div>
+                                      {shift.position && <div className="opacity-70 text-[9px]">{POSITION_MAP[shift.position]?.label ?? shift.position}</div>}
+                                      <div className="text-[9px] opacity-60">{!shift.is_posted ? 'szkic' : 'wolna'}</div>
+                                    </>
+                                  )}
+                                </button>
+                              ))}
+                              <button onClick={() => setOpenShiftModal({ open: true, date: d.iso, time_start: '08:00', time_end: '16:00', position: '', publishNow: false })}
+                                className={`w-full rounded border-dashed border-purple-200 text-purple-300 hover:border-purple-400 hover:text-purple-500 hover:bg-purple-50 transition-all flex items-center justify-center ${viewMode === 'month' ? 'h-4 border text-[10px]' : 'h-6 border text-sm'}`}>
+                                +
+                              </button>
+                            </div>
+                          </td>
+                        )
+                      })}
+                      <td className="px-2 py-2 border-b border-slate-200 text-center sticky right-0 bg-purple-50 z-10">
+                        <span className="text-xs font-bold text-purple-600">{openShifts.length}</span>
+                      </td>
+                    </tr>
+                  )
+                })()}
               </tbody>
             </table>
           </div>
 
-          {/* Legend */}
-          <div className="px-4 py-2.5 border-t border-slate-100 bg-slate-50 flex flex-wrap items-center gap-3">
-            <div className="flex flex-wrap gap-1">
-              {allPositions.map(p => (
-                <span key={p.value} className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${p.color}`}>{p.label}</span>
-              ))}
+          {/* Legend bar */}
+          <div className="px-4 py-2.5 border-t border-slate-100 bg-slate-50">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap gap-1">
+                {allPositions.map(p => {
+                  const hex = positionColors[p.value] ?? positionColors[p.value.toLowerCase()]
+                  return (
+                    <span key={p.value}
+                      className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${!hex ? p.color : ''}`}
+                      style={hex ? { backgroundColor: hex + '28', color: hex, borderColor: hex + '90' } : {}}>
+                      {p.label}
+                    </span>
+                  )
+                })}
+              </div>
+              <button onClick={() => setShowPosPanel(v => !v)}
+                className="text-[10px] font-semibold text-blue-600 hover:text-blue-800 underline ml-1">
+                {showPosPanel ? 'Zamknij' : '⚙ Zarządzaj stanowiskami'}
+              </button>
+              <div className="ml-auto flex gap-3 text-[10px] text-slate-400">
+                <span>-- Szkic</span>
+                <span>&#9644; Opublikowany</span>
+                <span className="text-green-600">&#10003; Zaakceptowany</span>
+                <span className="text-red-500">🚫 Niedostępny</span>
+              </div>
             </div>
-            <div className="ml-auto flex gap-3 text-[10px] text-slate-400">
-              <span>-- Szkic</span>
-              <span>&#9644; Opublikowany</span>
-              <span className="text-green-600">&#10003; Zaakceptowany</span>
-              <span className="text-red-500">🚫 Niedostępny</span>
-              <span className="text-green-600">✅ Dostępny</span>
-              <span className="text-violet-500">⏰ Konkretne godziny</span>
-            </div>
+
+            {/* Position management panel */}
+            {showPosPanel && (
+              <div className="mt-3 bg-white rounded-xl border border-slate-200 overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-slate-100 bg-slate-50">
+                  <p className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">Stanowiska i kolory</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Zdefiniuj stanowiska i przypisz im kolory — będą widoczne w grafiku</p>
+                </div>
+
+                {/* Built-in positions */}
+                <div className="p-3 space-y-1.5">
+                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Domyślne</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {POSITIONS.map(p => {
+                      const hex = positionColors[p.value] ?? '#6366F1'
+                      return (
+                        <div key={p.value} className="flex items-center gap-2 bg-slate-50 rounded-lg px-2.5 py-1.5 border border-slate-100">
+                          <input type="color" value={hex}
+                            onChange={e => savePositionColor(p.value, e.target.value)}
+                            className="w-6 h-6 rounded cursor-pointer border-0 p-0 shrink-0"
+                            title="Zmień kolor" />
+                          <span className="text-[12px] font-medium text-slate-700 truncate">{p.label}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* Custom positions */}
+                  {customPositions.length > 0 && (
+                    <>
+                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mt-3 mb-2">Własne</p>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {customPositions.map(p => {
+                          const hex = positionColors[p.value] ?? '#6366F1'
+                          return (
+                            <div key={p.value} className="flex items-center gap-2 bg-slate-50 rounded-lg px-2.5 py-1.5 border border-slate-100">
+                              <input type="color" value={hex}
+                                onChange={e => savePositionColor(p.value, e.target.value)}
+                                className="w-6 h-6 rounded cursor-pointer border-0 p-0 shrink-0"
+                                title="Zmień kolor" />
+                              <span className="text-[12px] font-medium text-slate-700 truncate flex-1">{p.label}</span>
+                              <button onClick={() => deleteCustomPosition(p.value)}
+                                className="text-slate-300 hover:text-red-400 transition-colors text-[14px] leading-none shrink-0">×</button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </>
+                  )}
+
+                  {/* Add new */}
+                  <div className="mt-3 pt-3 border-t border-slate-100">
+                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Dodaj własne stanowisko</p>
+                    <div className="flex items-center gap-2">
+                      <input type="color" value={newPosColor}
+                        onChange={e => setNewPosColor(e.target.value)}
+                        className="w-8 h-8 rounded-lg cursor-pointer border border-slate-200 p-0.5 shrink-0"
+                        title="Wybierz kolor" />
+                      <input
+                        type="text"
+                        placeholder="Nazwa stanowiska…"
+                        value={newPosName}
+                        onChange={e => setNewPosName(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') saveNewPosition() }}
+                        className="flex-1 h-8 px-3 rounded-lg border border-slate-200 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      />
+                      <button onClick={saveNewPosition} disabled={savingPos || !newPosName.trim()}
+                        className="h-8 px-4 rounded-lg bg-blue-600 text-white text-[12px] font-semibold hover:bg-blue-700 disabled:opacity-40 transition-colors shrink-0">
+                        {savingPos ? '…' : 'Dodaj'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </Card>
       )}
 
       {/* ── EDIT/ADD MODAL ── */}
-      <Dialog open={modal.open} onOpenChange={o => { setModal(m => ({ ...m, open: o })); if (!o) { setShowNewPos(false); setNewPosName('') } }}>
+      <Dialog open={modal.open} onOpenChange={o => setModal(m => ({ ...m, open: o }))}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{modal.mode === 'add' ? 'Nowa zmiana' : 'Edytuj zmianę'}</DialogTitle>
@@ -830,37 +1041,29 @@ export function ScheduleGrid({
               <div>
                 <Label className="text-xs mb-1.5 block">Stanowisko</Label>
                 <Select
-                  value={showNewPos ? '__add_new__' : (modal.shift.position || 'none')}
-                  onValueChange={v => {
-                    if (v === '__add_new__') { setShowNewPos(true); setNewPosName(''); return }
-                    setShowNewPos(false)
-                    setModal(m => ({ ...m, shift: { ...m.shift, position: v === 'none' ? null : v } }))
-                  }}
+                  value={modal.shift.position || 'none'}
+                  onValueChange={v => setModal(m => ({ ...m, shift: { ...m.shift, position: v === 'none' ? null : v } }))}
                 >
                   <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Wybierz…" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">— brak —</SelectItem>
-                    {POSITIONS.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
-                    {customPositions.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
-                    <SelectItem value="__add_new__">＋ Dodaj własne stanowisko</SelectItem>
+                    {allPositions.map(p => {
+                      const hex = positionColors[p.value] ?? positionColors[p.value.toLowerCase()]
+                      return (
+                        <SelectItem key={p.value} value={p.value}>
+                          <span className="flex items-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-sm shrink-0 inline-block"
+                              style={hex
+                                ? { backgroundColor: hex, opacity: 0.85 }
+                                : { backgroundColor: '#94a3b8' }} />
+                            {p.label}
+                          </span>
+                        </SelectItem>
+                      )
+                    })}
                   </SelectContent>
                 </Select>
-                {showNewPos && (
-                  <div className="flex gap-1.5 mt-1.5">
-                    <Input
-                      autoFocus
-                      placeholder="Nazwa stanowiska…"
-                      value={newPosName}
-                      onChange={e => setNewPosName(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') saveNewPosition() }}
-                      className="h-7 text-xs flex-1"
-                    />
-                    <Button size="sm" className="h-7 text-xs px-2" onClick={saveNewPosition} disabled={savingPos || !newPosName.trim()}>
-                      {savingPos ? '…' : 'Dodaj'}
-                    </Button>
-                    <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={() => { setShowNewPos(false); setNewPosName('') }}>✕</Button>
-                  </div>
-                )}
+                <p className="text-[10px] text-slate-400 mt-1">Brakuje stanowiska? Dodaj je przez <button onClick={() => { setShowPosPanel(true); setModal(m => ({...m, open: false})) }} className="underline text-blue-500">Zarządzaj stanowiskami</button>.</p>
               </div>
             </div>
             {modalHours > 0 && (
@@ -902,6 +1105,61 @@ export function ScheduleGrid({
             )}
             <Button variant="outline" size="sm" onClick={() => setModal(m => ({ ...m, open: false }))}>Anuluj</Button>
             <Button size="sm" onClick={saveShift}>{modal.mode === 'add' ? 'Dodaj zmianę' : 'Zapisz zmiany'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── OPEN SHIFT MODAL ── */}
+      <Dialog open={openShiftModal.open} onOpenChange={o => setOpenShiftModal(m => ({ ...m, open: o }))}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Zmiana do wzięcia</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-slate-500 -mt-1">Pracownicy zobaczą tę zmianę jako dostępną do zarezerwowania.</p>
+          <div className="space-y-3 py-1">
+            <div>
+              <Label className="text-xs mb-1.5 block">Data</Label>
+              <Input type="date" value={openShiftModal.date} onChange={e => setOpenShiftModal(m => ({ ...m, date: e.target.value }))} className="h-8 text-sm" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs mb-1.5 block">Od</Label>
+                <Input type="time" value={openShiftModal.time_start} onChange={e => setOpenShiftModal(m => ({ ...m, time_start: e.target.value }))} className="h-8 text-sm" />
+              </div>
+              <div>
+                <Label className="text-xs mb-1.5 block">Do</Label>
+                <Input type="time" value={openShiftModal.time_end} onChange={e => setOpenShiftModal(m => ({ ...m, time_end: e.target.value }))} className="h-8 text-sm" />
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs mb-1.5 block">Stanowisko</Label>
+              <Select value={openShiftModal.position || 'none'} onValueChange={v => setOpenShiftModal(m => ({ ...m, position: v === 'none' ? '' : v }))}>
+                <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Wybierz…" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">— dowolne —</SelectItem>
+                  {POSITIONS.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
+                  {customPositions.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            {openShiftModal.time_start && openShiftModal.time_end && (
+              <div className="bg-purple-50 rounded-lg px-3 py-2 text-sm text-purple-800 font-medium">
+                Czas zmiany: <strong>{calcHours(openShiftModal.time_start, openShiftModal.time_end).toFixed(1)} h</strong>
+              </div>
+            )}
+            <label className="flex items-center gap-2.5 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 cursor-pointer">
+              <input type="checkbox" checked={openShiftModal.publishNow}
+                onChange={e => setOpenShiftModal(m => ({ ...m, publishNow: e.target.checked }))}
+                className="w-4 h-4 rounded accent-green-600" />
+              <span className="text-xs text-amber-800">Opublikuj od razu — pracownicy zobaczą zmianę natychmiast</span>
+            </label>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" size="sm" onClick={() => setOpenShiftModal(m => ({ ...m, open: false }))}>Anuluj</Button>
+            <Button size="sm" onClick={saveOpenShift} disabled={savingOpenShift || !openShiftModal.date}
+              className="bg-purple-600 hover:bg-purple-700 text-white">
+              {savingOpenShift ? 'Zapisywanie…' : 'Dodaj zmianę'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
