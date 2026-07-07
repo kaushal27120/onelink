@@ -134,7 +134,7 @@ onelink/
 ### Installation
 
 ```bash
-git clone https://github.com/your-username/onelink.git
+git clone https://github.com/kaushal27120/onelink.git
 cd onelink
 npm install
 ```
